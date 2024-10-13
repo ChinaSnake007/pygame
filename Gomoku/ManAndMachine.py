@@ -6,16 +6,17 @@ import pygame
 from pygame.locals import *
 import pygame.gfxdraw
 from collections import namedtuple
+import time
 
 Chessman = namedtuple('Chessman', 'Name Value Color')
 Point = namedtuple('Point', 'X Y')
-
+# 定义棋子的颜色
 BLACK_CHESSMAN = Chessman('黑子', 1, (45, 45, 45))
 WHITE_CHESSMAN = Chessman('白子', 2, (219, 219, 219))
 
 offset = [(1, 0), (0, 1), (1, 1), (1, -1)]
 
-
+# 棋盘状态检查器
 class Checkerboard:
     def __init__(self, line_points):
         self._line_points = line_points
@@ -38,19 +39,22 @@ class Checkerboard:
         :return:若该子落下之后即可获胜，则返回获胜方，否则返回 None
         """
         print(f'{chessman.Name} ({point.X}, {point.Y})')
+        # 给棋盘加上棋子信息
         self._checkerboard[point.Y][point.X] = chessman.Value
 
+        # 判断棋子是否获胜
         if self._win(point):
             print(f'{chessman.Name}获胜')
             return chessman
 
-    # 判断是否赢了
+    # 定义棋子获胜规则
     def _win(self, point):
         cur_value = self._checkerboard[point.Y][point.X]
         for os in offset:
             if self._get_count_on_direction(point, cur_value, os[0], os[1]):
                 return True
 
+    # 从落子位置开始搜索某方向上的棋子数，返回5个以上，则返回True
     def _get_count_on_direction(self, point, value, x_offset, y_offset):
         count = 1
         for step in range(1, 5):
@@ -91,6 +95,28 @@ BLUE_COLOR = (30, 30, 200)
 
 RIGHT_INFO_POS_X = SCREEN_HEIGHT + Stone_Radius2 * 2 + 10
 
+# 弹窗类  
+class Popup:  
+    def __init__(self, screen, message):  
+        self.screen = screen  # 将 screen 作为参数传入  
+        self.message = message  
+        self.font = pygame.font.SysFont('SimHei', 20) 
+        self.width = 400  
+        self.height = 200  
+        self.rect = pygame.Rect((800 - self.width) // 2, (600 - self.height) // 2, self.width, self.height)  # 窗口大小直接在这里定义  
+
+        # 定义颜色  
+        self.GRAY = (200, 200, 200)  
+        self.BLACK = (0, 0, 0)  
+        self.WHITE = (255, 255, 255)  
+
+    def draw(self):  
+        pygame.draw.rect(self.screen, self.GRAY, self.rect)  
+        pygame.draw.rect(self.screen, self.BLACK, self.rect, 2)  # 边框  
+        text_surface = self.font.render(self.message, True, self.BLACK)  
+        text_rect = text_surface.get_rect(center=self.rect.center)  
+        self.screen.blit(text_surface, text_rect)  
+
 
 def print_text(screen, font, x, y, text, fcolor=(255, 255, 255)):
     imgText = font.render(text, True, fcolor)
@@ -103,30 +129,43 @@ def main():
     pygame.display.set_caption('五子棋')
 
     font1 = pygame.font.SysFont('SimHei', 32)
-    font2 = pygame.font.SysFont('SimHei', 72)
+    font2 = pygame.font.SysFont('SimHei', 50)
     fwidth, fheight = font2.size('黑方获胜')
 
+    # 定义棋盘的格子数
     checkerboard = Checkerboard(Line_Points)
+    # 当前的执棋方
     cur_runner = BLACK_CHESSMAN
+    # 赢家状态
     winner = None
+    repeatflag = False
+    outrange = False
     computer = AI(Line_Points, WHITE_CHESSMAN)
+    AI_now_point = Point(-1, -1)
 
     black_win_count = 0
     white_win_count = 0
-
+    # 一直在刷新屏幕
     while True:
         for event in pygame.event.get():
             if event.type == QUIT:
+                # 系统退出
                 sys.exit()
             elif event.type == KEYDOWN:
+                # 点击回车键，重置游戏
                 if event.key == K_RETURN:
                     if winner is not None:
                         winner = None
                         cur_runner = BLACK_CHESSMAN
                         checkerboard = Checkerboard(Line_Points)
                         computer = AI(Line_Points, WHITE_CHESSMAN)
+                    elif repeatflag:
+                        repeatflag = False
+                    elif outrange:
+                        outrange = False
+                    
             elif event.type == MOUSEBUTTONDOWN:
-                if winner is None:
+                if winner is None and not repeatflag and not outrange:
                     pressed_array = pygame.mouse.get_pressed()
                     if pressed_array[0]:
                         mouse_pos = pygame.mouse.get_pos()
@@ -138,22 +177,33 @@ def main():
                                     cur_runner = _get_next(cur_runner)
                                     computer.get_opponent_drop(click_point)
                                     AI_point = computer.AI_drop()
+                                    AI_now_point = AI_point
                                     winner = checkerboard.drop(cur_runner, AI_point)
                                     if winner is not None:
+                                        AI_now_point = Point(-1, -1)
                                         white_win_count += 1
                                     cur_runner = _get_next(cur_runner)
                                 else:
+                                    AI_now_point = Point(-1, -1)
                                     black_win_count += 1
+                            else:
+                                repeatflag = True
+                                print('该位置已有棋子')
                         else:
+                            outrange = True
                             print('超出棋盘区域')
-
         # 画棋盘
         _draw_checkerboard(screen)
 
         # 画棋盘上已有的棋子
         for i, row in enumerate(checkerboard.checkerboard):
             for j, cell in enumerate(row):
-                if cell == BLACK_CHESSMAN.Value:
+                # 对AI刚下的棋子加红色框子
+                if i == AI_now_point.Y and j == AI_now_point.X:
+                    _draw_chessman(screen, Point(j, i), WHITE_CHESSMAN.Color)
+                    _draw_rect(screen, AI_now_point)
+                    
+                elif cell == BLACK_CHESSMAN.Value:
                     _draw_chessman(screen, Point(j, i), BLACK_CHESSMAN.Color)
                 elif cell == WHITE_CHESSMAN.Value:
                     _draw_chessman(screen, Point(j, i), WHITE_CHESSMAN.Color)
@@ -161,8 +211,12 @@ def main():
         _draw_left_info(screen, font1, cur_runner, black_win_count, white_win_count)
 
         if winner:
-            print_text(screen, font2, (SCREEN_WIDTH - fwidth)//2, (SCREEN_HEIGHT - fheight)//2, winner.Name + '获胜', RED_COLOR)
-
+            Popup(screen,winner.Name + '获胜,回车继续').draw()
+            # print_text(screen, font2, (SCREEN_WIDTH - fwidth)//2, (SCREEN_HEIGHT - fheight)//2, winner.Name + '获胜,回车继续', RED_COLOR)
+        if repeatflag:
+            Popup(screen,'该位置已有棋子,回车继续').draw()
+        if outrange:
+            Popup(screen,'超出棋盘区域,回车继续').draw()
         pygame.display.flip()
 
 
@@ -208,7 +262,9 @@ def _draw_chessman(screen, point, stone_color):
     pygame.gfxdraw.aacircle(screen, Start_X + SIZE * point.X, Start_Y + SIZE * point.Y, Stone_Radius, stone_color)
     pygame.gfxdraw.filled_circle(screen, Start_X + SIZE * point.X, Start_Y + SIZE * point.Y, Stone_Radius, stone_color)
 
-
+# 给棋子加圆形边框
+def _draw_rect(screen, point):
+    pygame.gfxdraw.aacircle(screen, Start_X + SIZE * point.X, Start_Y + SIZE * point.Y, Stone_Radius + 2, (255, 0, 0))
 # 画左侧信息显示
 def _draw_left_info(screen, font, cur_runner, black_win_count, white_win_count):
     _draw_chessman_pos(screen, (SCREEN_HEIGHT + Stone_Radius2, Start_X + Stone_Radius2), BLACK_CHESSMAN.Color)
@@ -246,7 +302,7 @@ def _get_clickpoint(click_pos):
 
     return Point(x, y)
 
-
+# AI落子
 class AI:
     def __init__(self, line_points, chessman):
         self._line_points = line_points
